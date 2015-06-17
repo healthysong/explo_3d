@@ -128,6 +128,8 @@ public:
                 direction_copy *= kinect.max_range;
                 direction_copy += position;
                 n = octree->search(direction_copy);
+                if (!n)
+                    continue;
                 if (n->getOccupancy() < free_prob )
                     continue;
                 hits.push_back(direction_copy);
@@ -156,9 +158,12 @@ public:
                 direction_copy *= InitialScan.max_range;
                 direction_copy += position;
                 n = octree->search(direction_copy);
+                if (!n)
+                    continue;
+                // cout << "occupancy : " << n->getOccupancy() << endl;
                 if (n->getOccupancy() < free_prob )
                     continue;
-                cout << "hello" << endl;
+                // cout << "hello" << endl;
                 hits.push_back(direction_copy);
             }
         }
