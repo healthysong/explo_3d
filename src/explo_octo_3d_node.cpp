@@ -18,6 +18,7 @@ using namespace std::chrono;
 
 typedef octomap::point3d point3d;
 const double PI = 3.1415926;
+const double free_prob = 0.3;
 
 struct Kinect {
 
@@ -112,6 +113,7 @@ public:
     vector<point3d> cast_kinect_rays(const octomap::OcTree *octree, const point3d &position,
                                      const point3d &direction) const {
         vector<point3d> hits;
+        octomap::OcTreeNode *n;
         // cout << "d_x : " << direction.normalized().x() << " d_y : " << direction.normalized().y() << " d_z : " 
         //   << direction.normalized().z() << endl;
         for(auto p_y : kinect.pitch_yaws) {
@@ -125,6 +127,9 @@ public:
             } else {
                 direction_copy *= kinect.max_range;
                 direction_copy += position;
+                n = octree->search(direction_copy);
+                if (n->getOccupancy() < free_prob )
+                    continue;
                 hits.push_back(direction_copy);
             }
         }
@@ -134,8 +139,10 @@ public:
     vector<point3d> cast_init_rays(const octomap::OcTree *octree, const point3d &position,
                                      const point3d &direction) const {
         vector<point3d> hits;
+        octomap::OcTreeNode *n;
         // cout << "d_x : " << direction.x() << " d_y : " << direction.y() << " d_z : " 
         //   << direction.z() << endl;
+
         for(auto p_y : InitialScan.pitch_yaws) {
             double pitch = p_y.first;
             double yaw = p_y.second;
@@ -148,9 +155,15 @@ public:
             } else {
                 direction_copy *= InitialScan.max_range;
                 direction_copy += position;
+                n = octree->search(direction_copy);
+                if (n->getOccupancy() < free_prob )
+                    continue;
+                cout << "hello" << endl;
                 hits.push_back(direction_copy);
             }
         }
+        
+
         return hits;
     }
 
@@ -196,10 +209,8 @@ public:
         marker.ns = "sensor_kinect";
         marker.id = 0;
         marker.type = 0;
-        tf::Quaternion sensor_qua;
 
         // Initial Scan
-
         cout << "Initial hits at: " << c.first  << endl;
         point3d eu2dr(1, 0, 0);
         point3d orign(0, 0, 1);
@@ -223,10 +234,12 @@ public:
 #pragma omp parallel for
         for(int i = 0; i < candidates.size(); ++i) {
             c = candidates[i];
-            n = octomap_curr->search(c.first, octomap_curr->getTreeDepth());
+            n = octomap_curr->search(c.first);
 
+            cout << "occupancy : " << n->getOccupancy() << endl;
             if(n->getOccupancy() > free_prob)
             {
+                cout << "occupancy : " << n->getOccupancy() << endl;
                 continue;
             }
 
@@ -306,8 +319,6 @@ private:
 
     point3d position;
     point3d orientation;
-
-    const double free_prob = 0.3;
 
     ofstream logfile;
 };
