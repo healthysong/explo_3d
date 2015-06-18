@@ -74,7 +74,7 @@ public:
     void publish() const {
         msg->header.stamp = ros::Time::now().toNSec() / 1e3;
         pub.publish(msg);
-        cout << "published : " << msg->width << " points" << endl;
+        // cout << "published : " << msg->width << " points" << endl;
         ros::spinOnce();
     }
 
@@ -301,7 +301,6 @@ public:
             high_resolution_clock::time_point t1 = high_resolution_clock::now();
             point3d eu2dr(1, 0, 0);
             eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
-                        cout << "hello" << endl;
 
             vector<point3d> hits = cast_kinect_rays(octomap_curr, c.first, eu2dr);
             high_resolution_clock::time_point t2 = high_resolution_clock::now();
@@ -330,9 +329,9 @@ public:
 
             marker.header.stamp = ros::Time::now();
             marker.action = visualization_msgs::Marker::ADD;
-            marker.pose.position.x = c.first.x();
-            marker.pose.position.y = c.first.y();
-            marker.pose.position.z = c.first.z();
+            marker.pose.position.x = c.first.x()/5.0;
+            marker.pose.position.y = c.first.y()/5.0;
+            marker.pose.position.z = c.first.z()/5.0;
 
 
             cr2 = cos(c.second.roll()*0.5);
@@ -349,12 +348,12 @@ public:
             marker.pose.orientation.z = cr2*cp2*sy2 - sr2*sp2*cy2;
    
             // Set the scale of the marker -- 1x1x1 here means 1m on a side
-            marker.scale.x = 1.0;
-            marker.scale.y = 0.2;
-            marker.scale.z = 0.2;
+            marker.scale.x = 0.5;
+            marker.scale.y = 0.1;
+            marker.scale.z = 0.1;
 
             // Set the color -- be sure to set alpha to something non-zero!
-            marker.color.r = 0.0f;
+            marker.color.r = 1.0f;
             marker.color.g = 1.0f;
             marker.color.b = 0.0f;
             marker.color.a = 1.0;
@@ -372,8 +371,8 @@ public:
         // Incremental Scan
         c = candidates[max_idx];
         eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
-        cout << "rotbot moves to " << c.first << endl;
-        vector<point3d> Init_hits = cast_init_rays(octomap_load, c.first, eu2dr);
+        cout << "**** rotbot moves to " << c.first << endl;
+        vector<point3d> Init_hits = cast_kinect_rays(octomap_load, c.first, eu2dr);
         cout << "finished casting new rays" << endl;
         for(auto h : Init_hits) {
             // cout << "inserting ray .." << h << endl;
@@ -389,7 +388,9 @@ public:
         }
         CurrentPcl_pub.publish();
 
-        vector<pair<point3d, point3d>> candidates = generate_candidates();
+        position = c.first;
+        orientation = c.second;
+        candidates = generate_candidates();
         for (int i_mi = 0; i_mi < candidates.size(); ++i_mi)
             MIs[i_mi] = 0;
 
