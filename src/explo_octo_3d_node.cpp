@@ -122,7 +122,7 @@ public:
 
     // New candidates generation, fewer...
     vector<pair<point3d, point3d>> generate_candidates() const {
-        double R = 1;   // Robot step, in meters.
+        double R = 5;   // Robot step, in meters.
         double n = 5;
 
         vector<pair<point3d, point3d>> candidates;
