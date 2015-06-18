@@ -289,7 +289,7 @@ public:
                 pointcloud_pub.insert_point3d(h.x()/6.0, h.y()/6.0, h.z()/6.0);
             }
             pointcloud_pub.publish();
-
+            CurrentPcl_pub.publish();
 
             marker.header.stamp = ros::Time::now();
             marker.action = visualization_msgs::Marker::ADD;
