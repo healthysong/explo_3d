@@ -313,8 +313,9 @@ public:
             duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
             // cout << "Time on counting volume: " << duration << endl;
 
-            cout << "Candidate: " << c.first.x() << " " << c.first.y() << " " << c.first.z() << " " <<
-            c.second.pitch() << " " << c.second.yaw() << " MI:   " << MIs[i] << endl;
+            // cout << "Candidate: " << c.first.x() << " " << c.first.y() << " " << c.first.z() << " " <<
+            // c.second.pitch() << " " << c.second.yaw() << " MI:   " << MIs[i] << endl;
+            cout << "Candidate : " << c << "  **  MI: " << MIs[i] << endl;
 
             logfile << c.first.x() << "\t" << c.first.y() << "\t" << c.first.z() << "\t" << c.second.pitch() << "\t" <<
             c.second.yaw() << endl;
@@ -376,7 +377,7 @@ public:
         cout << "finished casting new rays" << endl;
         for(auto h : Init_hits) {
             // cout << "inserting ray .." << h << endl;
-            octomap_curr->insertRay(orign, h, InitialScan.max_range);
+            octomap_curr->insertRay(c.first, h, kinect.max_range);
         }
         octomap_curr->updateInnerOccupancy();
         cout << "finished inserting new rays" << endl;
