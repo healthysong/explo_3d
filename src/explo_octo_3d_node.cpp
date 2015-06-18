@@ -90,7 +90,7 @@ class OctomapExploration {
 public:
     OctomapExploration(ros::NodeHandle _nh) : nh(_nh), pointcloud_pub(_nh), CurrentPcl_pub(_nh),
      logfile("log.txt") {
-        position = point3d(0, 0, 6);
+        position = point3d(0, 0, 5);
         orientation = point3d(1, 0, 0);
         octomap_sub = nh.subscribe<octomap_msgs::Octomap>(OCTOMAP_BINARY_TOPIC, 1,
                                                           &OctomapExploration::octomap_callback, this);
@@ -255,7 +255,7 @@ public:
         // Initial Scan
 
         point3d eu2dr(1, 0, 0);
-        point3d orign(0, 0, 6);
+        point3d orign(0, 0, 5);
         eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
                 cout << "Initial hits at: " << orign  << endl;
         vector<point3d> Init_hits = cast_init_rays(octomap_load, orign, eu2dr);
@@ -273,15 +273,21 @@ public:
         CurrentPcl_pub.clear();
         CurrentPcl_pub.SetTopicName("CurrentMap");
         for (auto h : Init_hits) {
-            CurrentPcl_pub.insert_point3d(h.x()/6.0, h.y()/6.0, h.z()/6.0);
+            CurrentPcl_pub.insert_point3d(h.x()/5.0, h.y()/5.0, h.z()/5.0);
         }
         CurrentPcl_pub.publish();
         cout << "current Map published" << endl;
 
+
+        int max_idx = 0;
+
 #pragma omp parallel for
         for(int i = 0; i < candidates.size(); ++i) {
             c = candidates[i];
+
             n = octomap_curr->search(c.first);
+
+
             if (!n)
                 continue;
             // cout << "occupancy : " << n->getOccupancy() << endl;
@@ -316,7 +322,7 @@ public:
 
             pointcloud_pub.clear();
             for (auto h : hits) {
-                pointcloud_pub.insert_point3d(h.x()/6.0, h.y()/6.0, h.z()/6.0);
+                pointcloud_pub.insert_point3d(h.x()/5.0, h.y()/5.0, h.z()/5.0);
             }
             pointcloud_pub.publish();
             CurrentPcl_pub.publish();
@@ -355,10 +361,16 @@ public:
             marker.lifetime = ros::Duration();
             marker_pub.publish(marker);
 
+            if (MIs[i] > MIs[max_idx])
+            {
+                max_idx = i;
+            }
+
         }
-        int idx = distance(MIs.begin(),max_element(MIs.begin(),MIs.end()));
+        // int idx = distance(MIs.begin(),max_element(MIs.begin(),MIs.end()));
         // double idx = *max_element(MIs.begin(),MIs.end());
-        cout << "largest element : " << idx << endl;
+        cout << "largest element : " << max_idx << endl;
+
         nh.shutdown();
     }
 
