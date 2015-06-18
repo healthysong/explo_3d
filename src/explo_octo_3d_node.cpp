@@ -87,7 +87,7 @@ class OctomapExploration {
 public:
     OctomapExploration(ros::NodeHandle _nh) : nh(_nh), pointcloud_pub(_nh), CurrentPcl_pub(_nh),
      logfile("log.txt") {
-        position = point3d(0, 0, 1);
+        position = point3d(0, 0, 6);
         orientation = point3d(1, 0, 0);
         octomap_sub = nh.subscribe<octomap_msgs::Octomap>(OCTOMAP_BINARY_TOPIC, 1,
                                                           &OctomapExploration::octomap_callback, this);
@@ -97,23 +97,45 @@ public:
         logfile.close();
     }
 
+    // Original candidates generation...
+    // vector<pair<point3d, point3d>> generate_candidates() const {
+    //     double position_bound = 0.5;
+    //     double orientation_bound = kinect.horizontal_fov;
+    //     double n = 5;
+
+    //     vector<pair<point3d, point3d>> candidates;
+    //     double z = position.z();
+    //     double pitch = orientation.pitch();
+    //     double yaw = orientation.yaw();
+    //     for(double x = position.x() - position_bound * 0.5;
+    //         x < position.x() + position_bound * 0.5; x += position_bound / n)
+    //         for(double y = position.y() - position_bound * 0.5;
+    //             y < position.y() + position_bound * 0.5; y += position_bound / n)
+    //                 for(double yaw = 0; yaw < 2 * PI; yaw += PI / n) {
+    //                     candidates.push_back(make_pair<point3d, point3d>(point3d(x, y, z), point3d(0, pitch, yaw)));
+    //                 }
+    //     return candidates;
+    // }
+
+    // New candidates generation, fewer...
     vector<pair<point3d, point3d>> generate_candidates() const {
-        double position_bound = 0.5;
-        double orientation_bound = kinect.horizontal_fov;
+        double R = 1;   // Robot step, in meters.
         double n = 5;
 
         vector<pair<point3d, point3d>> candidates;
-        double z = position.z();
-        double pitch = orientation.pitch();
-        double yaw = orientation.yaw();
-        for(double x = position.x() - position_bound * 0.5;
-            x < position.x() + position_bound * 0.5; x += position_bound / n)
-            for(double y = position.y() - position_bound * 0.5;
-                y < position.y() + position_bound * 0.5; y += position_bound / n)
-                    for(double yaw = 0; yaw < 2 * PI; yaw += PI / n) {
-                        candidates.push_back(make_pair<point3d, point3d>(point3d(x, y, z), point3d(0, pitch, yaw)));
-                    }
-
+        double z = position.z();                // fixed 
+        double pitch = orientation.pitch();     // fixed
+        // double yaw = orientation.yaw();         // divided by n
+        double x, y;
+        // for(double x = position.x() - position_bound * 0.5;
+        //     x < position.x() + position_bound * 0.5; x += position_bound / n)
+        //     for(double y = position.y() - position_bound * 0.5;
+        //         y < position.y() + position_bound * 0.5; y += position_bound / n)
+        for(double yaw = 0; yaw < 2 * PI; yaw += PI / n) {
+            x = position.x() + R * cos(yaw);
+            y = position.y() + R * sin(yaw);
+            candidates.push_back(make_pair<point3d, point3d>(point3d(x, y, z), point3d(0, pitch, yaw)));
+        }
         return candidates;
     }
 
@@ -228,10 +250,11 @@ public:
         marker.type = 0;
 
         // Initial Scan
-        cout << "Initial hits at: " << c.first  << endl;
+
         point3d eu2dr(1, 0, 0);
-        point3d orign(0, 0, 1);
+        point3d orign(0, 0, 6);
         eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
+                cout << "Initial hits at: " << orign  << endl;
         vector<point3d> Init_hits = cast_init_rays(octomap_load, orign, eu2dr);
         // cout << "here" << endl;
         cout << "finished casting initial rays" << endl;
@@ -250,12 +273,14 @@ public:
             CurrentPcl_pub.insert_point3d(h.x()/6.0, h.y()/6.0, h.z()/6.0);
         }
         CurrentPcl_pub.publish();
+        cout << "current Map published" << endl;
 
 #pragma omp parallel for
         for(int i = 0; i < candidates.size(); ++i) {
             c = candidates[i];
             n = octomap_curr->search(c.first);
-
+            if (!n)
+                continue;
             // cout << "occupancy : " << n->getOccupancy() << endl;
             if(n->getOccupancy() > free_prob)
             {
@@ -266,6 +291,8 @@ public:
             high_resolution_clock::time_point t1 = high_resolution_clock::now();
             point3d eu2dr(1, 0, 0);
             eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
+                        cout << "hello" << endl;
+
             vector<point3d> hits = cast_kinect_rays(octomap_curr, c.first, eu2dr);
             high_resolution_clock::time_point t2 = high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
