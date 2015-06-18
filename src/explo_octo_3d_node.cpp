@@ -40,7 +40,7 @@ struct Kinect {
     }
 }; 
 Kinect InitialScan(1000, 1000, 6.0, 15.0);
-Kinect kinect(640, 480, 1.047198, 15.0);
+Kinect kinect(640, 480, 1.047198, 20.0);
 
 class PointCloudPub {
     typedef pcl::PointXYZ PointType;
@@ -175,8 +175,7 @@ public:
     double get_free_volume(const octomap::OcTree *octree) const {
         double volume = 0;
         for(octomap::OcTree::leaf_iterator n = octree->begin_leafs(octree->getTreeDepth()); n != octree->end_leafs(); ++n) {
-            // if(n->getOccupancy() < free_prob)
-            if(octree->isNodeOccupied(*n))
+            if(!octree->isNodeOccupied(*n))
                 volume += pow(n.getSize(), 3);
         }
         return volume;
@@ -184,13 +183,13 @@ public:
 
     double calc_MI(const octomap::OcTree *octree, const point3d &position, const vector<point3d> &hits, const double before) const {
         auto octree_copy = new octomap::OcTree(*octree);
+        // octomap::OcTree *octree_copy = dynamic_cast<octomap::OcTree *>(octree);
         // cout << "th iter " << endl;
         for(const auto h : hits) {
             octree_copy->insertRay(position, h, kinect.max_range);
         }
         octree_copy->updateInnerOccupancy();
         double after = get_free_volume(octree_copy);
-        
         delete octree_copy;
         return after - before;
     }
@@ -198,8 +197,12 @@ public:
     void octomap_callback(const octomap_msgs::Octomap::ConstPtr &octomap_msg) {
         octomap::OcTree *octomap_load = dynamic_cast<octomap::OcTree *>(octomap_msgs::msgToMap(*octomap_msg));
         octomap_load->setResolution(0.2);
-        // octomap::OcTree *octomap_curr;
-        auto octomap_curr = new octomap::OcTree(*octomap_load);
+        octomap::OcTree tree(0.2);
+        octomap::OcTree *octomap_curr = &tree;
+
+        cout << "occupancy thres : " << octomap_load->getOccupancyThres() << endl;
+        cout << "loaded octomap free volume : " << get_free_volume(octomap_load) << endl;
+        cout << "new octomap free volume : " << get_free_volume(octomap_curr) << endl;
 
         vector<pair<point3d, point3d>> candidates = generate_candidates();
         vector<double> MIs(candidates.size());
@@ -227,8 +230,10 @@ public:
             // cout << "inserting ray .." << h << endl;
             octomap_curr->insertRay(orign, h, InitialScan.max_range);
         }
+        octomap_curr->updateInnerOccupancy();
         cout << "finished inserting rays" << endl;
         double before = get_free_volume(octomap_curr);
+        cout << "free volume after initial scan : " << before << endl; 
 
         pointcloud_pub.clear();
         for (auto h : Init_hits) {
@@ -241,10 +246,10 @@ public:
             c = candidates[i];
             n = octomap_curr->search(c.first);
 
-            cout << "occupancy : " << n->getOccupancy() << endl;
+            // cout << "occupancy : " << n->getOccupancy() << endl;
             if(n->getOccupancy() > free_prob)
             {
-                cout << "occupancy : " << n->getOccupancy() << endl;
+                // cout << "occupancy : " << n->getOccupancy() << endl;
                 continue;
             }
 
@@ -254,7 +259,7 @@ public:
             vector<point3d> hits = cast_kinect_rays(octomap_curr, c.first, eu2dr);
             high_resolution_clock::time_point t2 = high_resolution_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
-            // cout << "Time on ray cast: " << duration << endl;
+            cout << "Time on ray cast: " << duration << endl;
 
             t1 = high_resolution_clock::now();
             MIs[i] = calc_MI(octomap_curr, c.first, hits, before);
