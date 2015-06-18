@@ -1,7 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <chrono>
-
+#include <algorithm>
 
 #include <octomap/octomap.h>
 #include <ros/ros.h>
@@ -12,6 +12,8 @@
 #include <octomap_msgs/conversions.h>
 #include <octomap_msgs/GetOctomap.h>
 #include <tf/transform_broadcaster.h>
+
+
 
 using namespace std;
 using namespace std::chrono;
@@ -353,7 +355,8 @@ public:
             marker_pub.publish(marker);
 
         }
-        cout << "largest element : " << *std::max_element(MIs,MIs.end()) << endl;
+        double idx = *max_element(MIs.begin(),MIs.end());
+        cout << "largest element : " << idx << endl;
         nh.shutdown();
     }
 
