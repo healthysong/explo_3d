@@ -40,17 +40,22 @@ struct Kinect {
     }
 }; 
 Kinect InitialScan(1000, 1000, 6.0, 15.0);
-Kinect kinect(640, 480, 1.047198, 20.0);
+Kinect kinect(640, 480, 1.047198, 15.0);
 
 class PointCloudPub {
     typedef pcl::PointXYZ PointType;
     typedef pcl::PointCloud<PointType> PointCloud;
 public:
-    PointCloudPub(ros::NodeHandle _nh) : nh(_nh), msg(new PointCloud) {
+    PointCloudPub(ros::NodeHandle _nh) : nh(_nh), msg(new PointCloud), tp_name("virtualScans") {
         msg->header.frame_id = pointcloud_frame_id;
         msg->height = 1;
         msg->width = 0;
-        pub = nh.advertise<PointCloud>("virtualScans", 1);
+        // pub = nh.advertise<PointCloud>("virtualScans", 1);
+        pub = nh.advertise<PointCloud>(tp_name, 1);
+    }
+
+    void SetTopicName(string tp_name) {
+        pub = nh.advertise<PointCloud>(tp_name, 1);
     }
 
     void insert_point3d(double x, double y, double z) {
@@ -75,11 +80,13 @@ private:
     ros::Publisher pub;
     const string pointcloud_frame_id = "/map";
     PointCloud::Ptr msg;
+    string tp_name;
 };
 
 class OctomapExploration {
 public:
-    OctomapExploration(ros::NodeHandle _nh) : nh(_nh), pointcloud_pub(_nh), logfile("log.txt") {
+    OctomapExploration(ros::NodeHandle _nh) : nh(_nh), pointcloud_pub(_nh), CurrentPcl_pub(_nh),
+     logfile("log.txt") {
         position = point3d(0, 0, 1);
         orientation = point3d(1, 0, 0);
         octomap_sub = nh.subscribe<octomap_msgs::Octomap>(OCTOMAP_BINARY_TOPIC, 1,
@@ -208,6 +215,8 @@ public:
         vector<double> MIs(candidates.size());
         auto c = candidates[0];
         octomap::OcTreeNode *n;
+        // CurrentPcl_pub(_nh);
+
 
         float cr2, cp2, cy2, sr2, sp2, sy2;
         
@@ -235,11 +244,12 @@ public:
         double before = get_free_volume(octomap_curr);
         cout << "free volume after initial scan : " << before << endl; 
 
-        pointcloud_pub.clear();
+        CurrentPcl_pub.clear();
+        CurrentPcl_pub.SetTopicName("CurrentMap");
         for (auto h : Init_hits) {
-            pointcloud_pub.insert_point3d(h.x()/6.0, h.y()/6.0, h.z()/6.0);
+            CurrentPcl_pub.insert_point3d(h.x()/6.0, h.y()/6.0, h.z()/6.0);
         }
-        pointcloud_pub.publish();
+        CurrentPcl_pub.publish();
 
 #pragma omp parallel for
         for(int i = 0; i < candidates.size(); ++i) {
@@ -324,6 +334,7 @@ private:
     const string OCTOMAP_BINARY_TOPIC = "/octomap_binary";
     ros::Subscriber octomap_sub;
     PointCloudPub pointcloud_pub;
+    PointCloudPub CurrentPcl_pub;
     ros::Publisher marker_pub = nh.advertise<visualization_msgs::Marker>("CenterOfSensor", 1);
 
 
