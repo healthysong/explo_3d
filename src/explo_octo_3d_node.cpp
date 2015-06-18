@@ -2,6 +2,7 @@
 #include <fstream>
 #include <chrono>
 #include <algorithm>
+#include <iterator>
 
 #include <octomap/octomap.h>
 #include <ros/ros.h>
@@ -355,7 +356,8 @@ public:
             marker_pub.publish(marker);
 
         }
-        double idx = *max_element(MIs.begin(),MIs.end());
+        int idx = distance(MIs.begin(),max_element(MIs.begin(),MIs.end()));
+        // double idx = *max_element(MIs.begin(),MIs.end());
         cout << "largest element : " << idx << endl;
         nh.shutdown();
     }
