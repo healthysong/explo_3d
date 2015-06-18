@@ -278,7 +278,8 @@ public:
         CurrentPcl_pub.publish();
         cout << "current Map published" << endl;
 
-
+        while(1)
+        {
         int max_idx = 0;
 
 #pragma omp parallel for
@@ -367,10 +368,32 @@ public:
             }
 
         }
-        // int idx = distance(MIs.begin(),max_element(MIs.begin(),MIs.end()));
-        // double idx = *max_element(MIs.begin(),MIs.end());
-        cout << "largest element : " << max_idx << endl;
 
+        // Incremental Scan
+        c = candidates[max_idx];
+        eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
+        cout << "rotbot moves to " << c.first << endl;
+        vector<point3d> Init_hits = cast_init_rays(octomap_load, c.first, eu2dr);
+        cout << "finished casting new rays" << endl;
+        for(auto h : Init_hits) {
+            // cout << "inserting ray .." << h << endl;
+            octomap_curr->insertRay(orign, h, InitialScan.max_range);
+        }
+        octomap_curr->updateInnerOccupancy();
+        cout << "finished inserting new rays" << endl;
+        double before = get_free_volume(octomap_curr);
+        cout << "free volume after new scan : " << before << endl; 
+
+        for (auto h : Init_hits) {
+            CurrentPcl_pub.insert_point3d(h.x()/5.0, h.y()/5.0, h.z()/5.0);
+        }
+        CurrentPcl_pub.publish();
+
+        vector<pair<point3d, point3d>> candidates = generate_candidates();
+        for (int i_mi = 0; i_mi < candidates.size(); ++i_mi)
+            MIs[i_mi] = 0;
+
+        }
         nh.shutdown();
     }
 
