@@ -353,6 +353,7 @@ public:
             marker_pub.publish(marker);
 
         }
+        cout << "largest element : " << *std::max_element(MIs,MIs.end()) << endl;
         nh.shutdown();
     }
 
