@@ -315,7 +315,7 @@ public:
 
             // cout << "Candidate: " << c.first.x() << " " << c.first.y() << " " << c.first.z() << " " <<
             // c.second.pitch() << " " << c.second.yaw() << " MI:   " << MIs[i] << endl;
-            cout << "Candidate : " << c << "  **  MI: " << MIs[i] << endl;
+            cout << "Candidate : " << c.first << "  **  MI: " << MIs[i] << endl;
 
             logfile << c.first.x() << "\t" << c.first.y() << "\t" << c.first.z() << "\t" << c.second.pitch() << "\t" <<
             c.second.yaw() << endl;
