@@ -122,8 +122,8 @@ public:
 
     // New candidates generation, fewer...
     vector<pair<point3d, point3d>> generate_candidates() const {
-        double R = 5;   // Robot step, in meters.
-        double n = 5;
+        double R = 3;   // Robot step, in meters.
+        double n = 10;
 
         vector<pair<point3d, point3d>> candidates;
         double z = position.z();                // fixed 
@@ -134,11 +134,12 @@ public:
         //     x < position.x() + position_bound * 0.5; x += position_bound / n)
         //     for(double y = position.y() - position_bound * 0.5;
         //         y < position.y() + position_bound * 0.5; y += position_bound / n)
-        for(double yaw = 0; yaw < 2 * PI; yaw += PI / n) {
-            x = position.x() + R * cos(yaw);
-            y = position.y() + R * sin(yaw);
-            candidates.push_back(make_pair<point3d, point3d>(point3d(x, y, z), point3d(0, pitch, yaw)));
-        }
+        for(z = position.z() - 1; z <= position.z() + 1; z += 1)
+            for(double yaw = 0; yaw < 2 * PI; yaw += PI / n) {
+                x = position.x() + R * cos(yaw);
+                y = position.y() + R * sin(yaw);
+                candidates.push_back(make_pair<point3d, point3d>(point3d(x, y, z), point3d(0, pitch, yaw)));
+            }
         return candidates;
     }
 
@@ -209,6 +210,7 @@ public:
         for(octomap::OcTree::leaf_iterator n = octree->begin_leafs(octree->getTreeDepth()); n != octree->end_leafs(); ++n) {
             if(!octree->isNodeOccupied(*n))
                 volume += pow(n.getSize(), 3);
+                // cout << "node : " << n.getCoordinate() << endl;
         }
         return volume;
     }
@@ -285,9 +287,7 @@ public:
 #pragma omp parallel for
         for(int i = 0; i < candidates.size(); ++i) {
             c = candidates[i];
-
             n = octomap_curr->search(c.first);
-
 
             if (!n)
                 continue;
@@ -326,7 +326,7 @@ public:
                 pointcloud_pub.insert_point3d(h.x()/5.0, h.y()/5.0, h.z()/5.0);
             }
             pointcloud_pub.publish();
-            CurrentPcl_pub.publish();
+            // CurrentPcl_pub.publish();
 
             marker.header.stamp = ros::Time::now();
             marker.action = visualization_msgs::Marker::ADD;
@@ -376,7 +376,6 @@ public:
         vector<point3d> Init_hits = cast_kinect_rays(octomap_load, c.first, eu2dr);
         cout << "finished casting new rays" << endl;
         for(auto h : Init_hits) {
-            // cout << "inserting ray .." << h << endl;
             octomap_curr->insertRay(c.first, h, kinect.max_range);
         }
         octomap_curr->updateInnerOccupancy();
@@ -384,9 +383,15 @@ public:
         double before = get_free_volume(octomap_curr);
         cout << "free volume after new scan : " << before << endl; 
 
-        for (auto h : Init_hits) {
-            CurrentPcl_pub.insert_point3d(h.x()/5.0, h.y()/5.0, h.z()/5.0);
+        CurrentPcl_pub.clear();
+        for(octomap::OcTree::leaf_iterator n = octomap_curr->begin_leafs(octomap_curr->getTreeDepth()); n != octomap_curr->end_leafs(); ++n) {
+            if(octomap_curr->isNodeOccupied(*n))
+                CurrentPcl_pub.insert_point3d(n.getCoordinate().x()/5.0,
+                   n.getCoordinate().y()/5.0, n.getCoordinate().z()/5.0 );
         }
+        // for (auto h : Init_hits) {
+        //     CurrentPcl_pub.insert_point3d(h.x()/5.0, h.y()/5.0, h.z()/5.0);
+        // }
         CurrentPcl_pub.publish();
 
         position = c.first;
