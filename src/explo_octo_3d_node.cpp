@@ -199,9 +199,7 @@ public:
                 // cout << "hello" << endl;
                 hits.push_back(direction_copy);
             }
-        }
-        
-
+        }        
         return hits;
     }
 
@@ -243,7 +241,6 @@ public:
         auto c = candidates[0];
         octomap::OcTreeNode *n;
         // CurrentPcl_pub(_nh);
-
 
         float cr2, cp2, cy2, sr2, sp2, sy2;
         

@@ -111,7 +111,8 @@ include_directories(
 # )
 
 ## Declare a cpp executable
-add_executable(explo_octo_3d_node src/explo_octo_3d_node.cpp)
+add_executable(explo_octo_3d_node   src/explo_octo_3d_node.cpp)
+add_executable(mutual_info          src/mutual_info.cpp)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
@@ -123,6 +124,11 @@ add_executable(explo_octo_3d_node src/explo_octo_3d_node.cpp)
 # )
 
 target_link_libraries(explo_octo_3d_node
+  ${catkin_LIBRARIES}
+  ${OCTOMAP_LIBRARIES}
+)
+
+target_link_libraries(mutual_info
   ${catkin_LIBRARIES}
   ${OCTOMAP_LIBRARIES}
 )
