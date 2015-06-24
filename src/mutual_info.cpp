@@ -22,12 +22,11 @@ using namespace std::chrono;
 typedef octomap::point3d point3d;
 const double PI = 3.1415926;
 const double free_prob = 0.3;
-// const string OCTOMAP_BINARY_TOPIC = "/octomap_binary";
 octomap::OcTree *tree;
 bool octomap_flag = 0; // 0 : msg not received
 
-struct Kinect {
 
+struct Kinect {
     double horizontal_fov;
     double angle_inc;
     double width;
@@ -85,19 +84,44 @@ vector<point3d> cast_init_rays(const octomap::OcTree *octree, const point3d &pos
     return hits;
 }
 
-vector<pair<point3d, point3d>> generate_candidates() {
+
+vector<point3d> cast_kinect_rays(const octomap::OcTree *octree, const point3d &position,
+                                 const point3d &direction) {
+    vector<point3d> hits;
+    octomap::OcTreeNode *n;
+    // cout << "d_x : " << direction.normalized().x() << " d_y : " << direction.normalized().y() << " d_z : " 
+    //   << direction.normalized().z() << endl;
+    for(auto p_y : kinect.pitch_yaws) {
+        double pitch = p_y.first;
+        double yaw = p_y.second;
+        point3d direction_copy(direction.normalized());
+        point3d end;
+        direction_copy.rotate_IP(0.0, pitch, yaw);
+        if(octree->castRay(position, direction_copy, end, true, kinect.max_range)) {
+            hits.push_back(end);
+        } else {
+            direction_copy *= kinect.max_range;
+            direction_copy += position;
+            n = octree->search(direction_copy);
+            if (!n)
+                continue;
+            if (n->getOccupancy() < free_prob )
+                continue;
+            hits.push_back(direction_copy);
+        }
+    }
+    return hits;
+}
+
+vector<pair<point3d, point3d>> generate_candidates(point3d position) {
     double R = 3;   // Robot step, in meters.
     double n = 10;
 
     vector<pair<point3d, point3d>> candidates;
     double z = position.z();                // fixed 
-    double pitch = orientation.pitch();     // fixed
-    // double yaw = orientation.yaw();         // divided by n
+    double pitch = 0;     // fixed
     double x, y;
-    // for(double x = position.x() - position_bound * 0.5;
-    //     x < position.x() + position_bound * 0.5; x += position_bound / n)
-    //     for(double y = position.y() - position_bound * 0.5;
-    //         y < position.y() + position_bound * 0.5; y += position_bound / n)
+
     for(z = position.z() - 1; z <= position.z() + 1; z += 1)
         for(double yaw = 0; yaw < 2 * PI; yaw += PI / n) {
             x = position.x() + R * cos(yaw);
@@ -107,6 +131,18 @@ vector<pair<point3d, point3d>> generate_candidates() {
     return candidates;
 }
 
+double calc_MI(const octomap::OcTree *octree, const point3d &position, const vector<point3d> &hits, const double before) {
+    auto octree_copy = new octomap::OcTree(*octree);
+    // octomap::OcTree *octree_copy = dynamic_cast<octomap::OcTree *>(octree);
+    // cout << "th iter " << endl;
+    for(const auto h : hits) {
+        octree_copy->insertRay(position, h, kinect.max_range);
+    }
+    octree_copy->updateInnerOccupancy();
+    double after = get_free_volume(octree_copy);
+    delete octree_copy;
+    return after - before;
+}
 
 void octomap_callback(const octomap_msgs::Octomap::ConstPtr &octomap_msg) {
         octomap::OcTree *octomap_load = dynamic_cast<octomap::OcTree *>(octomap_msgs::msgToMap(*octomap_msg));
@@ -129,6 +165,14 @@ int main(int argc, char **argv) {
     ros::Rate r(1); // 10 hz
 
 
+    // Initialize parameters
+    int max_idx = 0;
+    point3d position;
+    point3d orientation;
+    position = point3d(0, 0, 5);
+    orientation = point3d(1, 0, 0);
+    octomap::OcTreeNode *n;
+
     // Initial Scan
     cout << "calculate free volume" << endl;
     double mapEntropy = get_free_volume(tree);
@@ -148,13 +192,15 @@ int main(int argc, char **argv) {
         if( octomap_flag )
         {
             // Generate Candidates
-            vector<pair<point3d, point3d>> candidates = generate_candidates();
+            vector<pair<point3d, point3d>> candidates = generate_candidates(position);
+            vector<double> MIs(candidates.size());
+            max_idx = 0;
 
             // Calculate Mutual Information
             for(int i = 0; i < candidates.size(); ++i) 
             {
-                c = candidates[i];
-                n = octomap_curr->search(c.first);
+                auto c = candidates[i];
+                n = tree->search(c.first);
 
                 if (!n)     continue;
                 if(n->getOccupancy() > free_prob)       continue;
@@ -163,20 +209,20 @@ int main(int argc, char **argv) {
                 point3d eu2dr(1, 0, 0);
                 eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
 
-                vector<point3d> hits = cast_kinect_rays(octomap_curr, c.first, eu2dr);
+                vector<point3d> hits = cast_kinect_rays(tree, c.first, eu2dr);
                 high_resolution_clock::time_point t2 = high_resolution_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
                 cout << "Time on ray cast: " << duration << endl;
 
                 t1 = high_resolution_clock::now();
-                MIs[i] = calc_MI(octomap_curr, c.first, hits, before);
+                MIs[i] = calc_MI(tree, c.first, hits, before);
                 t2 = high_resolution_clock::now();
                 duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
                 cout << "Candidate : " << c.first << "  **  MI: " << MIs[i] << endl;
 
-                logfile << c.first.x() << "\t" << c.first.y() << "\t" << c.first.z() << "\t" << c.second.pitch() << "\t" <<
-                c.second.yaw() << endl;
-                logfile << MIs[i] << endl;
+                // logfile << c.first.x() << "\t" << c.first.y() << "\t" << c.first.z() << "\t" << c.second.pitch() << "\t" <<
+                // c.second.yaw() << endl;
+                // logfile << MIs[i] << endl;
 
                 // Pick the Best Candidate
                 if (MIs[i] > MIs[max_idx])
