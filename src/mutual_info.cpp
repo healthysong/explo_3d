@@ -58,6 +58,56 @@ double get_free_volume(const octomap::OcTree *octree) {
     return volume;
 }
 
+vector<point3d> cast_init_rays(const octomap::OcTree *octree, const point3d &position,
+                                 const point3d &direction) {
+    vector<point3d> hits;
+    octomap::OcTreeNode *n;
+
+    for(auto p_y : InitialScan.pitch_yaws) {
+        double pitch = p_y.first;
+        double yaw = p_y.second;
+        point3d direction_copy(direction.normalized());
+        point3d end;
+        direction_copy.rotate_IP(0.0, pitch, yaw);
+        if(octree->castRay(position, direction_copy, end, true, InitialScan.max_range)) {
+            hits.push_back(end);
+        } else {
+            direction_copy *= InitialScan.max_range;
+            direction_copy += position;
+            n = octree->search(direction_copy);
+            if (!n)
+                continue;
+            if (n->getOccupancy() < free_prob )
+                continue;
+            hits.push_back(direction_copy);
+        }
+    }        
+    return hits;
+}
+
+vector<pair<point3d, point3d>> generate_candidates() {
+    double R = 3;   // Robot step, in meters.
+    double n = 10;
+
+    vector<pair<point3d, point3d>> candidates;
+    double z = position.z();                // fixed 
+    double pitch = orientation.pitch();     // fixed
+    // double yaw = orientation.yaw();         // divided by n
+    double x, y;
+    // for(double x = position.x() - position_bound * 0.5;
+    //     x < position.x() + position_bound * 0.5; x += position_bound / n)
+    //     for(double y = position.y() - position_bound * 0.5;
+    //         y < position.y() + position_bound * 0.5; y += position_bound / n)
+    for(z = position.z() - 1; z <= position.z() + 1; z += 1)
+        for(double yaw = 0; yaw < 2 * PI; yaw += PI / n) {
+            x = position.x() + R * cos(yaw);
+            y = position.y() + R * sin(yaw);
+            candidates.push_back(make_pair<point3d, point3d>(point3d(x, y, z), point3d(0, pitch, yaw)));
+        }
+    return candidates;
+}
+
+
 void octomap_callback(const octomap_msgs::Octomap::ConstPtr &octomap_msg) {
         octomap::OcTree *octomap_load = dynamic_cast<octomap::OcTree *>(octomap_msgs::msgToMap(*octomap_msg));
         octomap_load->setResolution(0.2);
@@ -69,39 +119,6 @@ void octomap_callback(const octomap_msgs::Octomap::ConstPtr &octomap_msg) {
         cout << "msg got !" << endl;
 }
 
-
-vector<point3d> cast_init_rays(const octomap::OcTree *octree, const point3d &position,
-                                 const point3d &direction) {
-    vector<point3d> hits;
-    octomap::OcTreeNode *n;
-    // cout << "d_x : " << direction.x() << " d_y : " << direction.y() << " d_z : " 
-    //   << direction.z() << endl;
-
-    for(auto p_y : InitialScan.pitch_yaws) {
-        double pitch = p_y.first;
-        double yaw = p_y.second;
-        point3d direction_copy(direction.normalized());
-        point3d end;
-        direction_copy.rotate_IP(0.0, pitch, yaw);
-        // hits.push_back(direction_copy);
-        if(octree->castRay(position, direction_copy, end, true, InitialScan.max_range)) {
-            hits.push_back(end);
-        } else {
-            direction_copy *= InitialScan.max_range;
-            direction_copy += position;
-            n = octree->search(direction_copy);
-            if (!n)
-                continue;
-            // cout << "occupancy : " << n->getOccupancy() << endl;
-            if (n->getOccupancy() < free_prob )
-                continue;
-            // cout << "hello" << endl;
-            hits.push_back(direction_copy);
-        }
-    }        
-    return hits;
-}
-
 int main(int argc, char **argv) {
     ros::init(argc, argv, "Info_Exploration_Octomap");
     ros::NodeHandle nh;
@@ -111,26 +128,68 @@ int main(int argc, char **argv) {
 
     ros::Rate r(1); // 10 hz
 
+
+    // Initial Scan
+    cout << "calculate free volume" << endl;
+    double mapEntropy = get_free_volume(tree);
+    cout << "Map Entropy : " << mapEntropy << endl;
+    point3d eu2dr(1, 0, 0);
+    point3d orign(0, 0, 5);
+    point3d orient(0, 0, 1);
+    cout << "Initial hits at: " << orign  << endl;
+    eu2dr.rotate_IP(orient.roll(), orient.pitch(), orient.yaw());
+    vector<point3d> Init_hits = cast_init_rays(tree, orign, eu2dr);
+    cout << "finished casting initial rays" << endl;
+    double before = get_free_volume(tree);
+
+
     while (ros::ok())
     {
         if( octomap_flag )
         {
-            cout << "calculate free volume" << endl;
-            double mapEntropy = get_free_volume(tree);
-            cout << "Map Entropy : " << mapEntropy << endl;
-                    
-            // Initial Scan
-            point3d eu2dr(1, 0, 0);
-            point3d orign(0, 0, 5);
-            point3d orient(0, 0, 1);
-            eu2dr.rotate_IP(orient.roll(), orient.pitch(), orient.yaw());
-                    cout << "Initial hits at: " << orign  << endl;
-            vector<point3d> Init_hits = cast_init_rays(tree, orign, eu2dr);
-            // cout << "here" << endl;
-            cout << "finished casting initial rays" << endl;
+            // Generate Candidates
+            vector<pair<point3d, point3d>> candidates = generate_candidates();
 
+            // Calculate Mutual Information
+            for(int i = 0; i < candidates.size(); ++i) 
+            {
+                c = candidates[i];
+                n = octomap_curr->search(c.first);
+
+                if (!n)     continue;
+                if(n->getOccupancy() > free_prob)       continue;
+
+                high_resolution_clock::time_point t1 = high_resolution_clock::now();
+                point3d eu2dr(1, 0, 0);
+                eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
+
+                vector<point3d> hits = cast_kinect_rays(octomap_curr, c.first, eu2dr);
+                high_resolution_clock::time_point t2 = high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
+                cout << "Time on ray cast: " << duration << endl;
+
+                t1 = high_resolution_clock::now();
+                MIs[i] = calc_MI(octomap_curr, c.first, hits, before);
+                t2 = high_resolution_clock::now();
+                duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
+                cout << "Candidate : " << c.first << "  **  MI: " << MIs[i] << endl;
+
+                logfile << c.first.x() << "\t" << c.first.y() << "\t" << c.first.z() << "\t" << c.second.pitch() << "\t" <<
+                c.second.yaw() << endl;
+                logfile << MIs[i] << endl;
+
+                // Pick the Best Candidate
+                if (MIs[i] > MIs[max_idx])
+                {
+                    max_idx = i;
+                }
+            }
+
+            // Send the Robot 
+
+
+            // Disable flag and wait for next message.
             octomap_flag = false;
-
         }
         ros::spinOnce();
         r.sleep();
