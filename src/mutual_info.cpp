@@ -5,6 +5,7 @@
 #include <iterator>
 
 #include <pcl/point_types.h>
+#include <sensor_msgs/PointCloud2.h>
 
 #include <octomap/octomap.h>
 #include <ros/ros.h>
@@ -23,7 +24,6 @@ using namespace std::chrono;
 
 typedef octomap::point3d point3d;
 typedef pcl::PointXYZ PointType;
-// typedef pcl::PointCloud<PointType> PointCloud;
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 const double PI = 3.1415926;
 const double free_prob = 0.3;
@@ -59,6 +59,19 @@ double get_free_volume(const octomap::OcTree *octree) {
             volume += pow(n.getSize(), 3);
     }
     return volume;
+}
+
+void get_free_points(const octomap::OcTree *octree, PointCloud::Ptr pclPtr) {
+    
+    for(octomap::OcTree::leaf_iterator n = octree->begin_leafs(octree->getTreeDepth()); n != octree->end_leafs(); ++n) {
+        if(!octree->isNodeOccupied(*n))
+        {
+            pclPtr->points.push_back(pcl::PointXYZ(n.getX()/5.0, n.getY()/5.0, n.getZ()/5.0));
+            pclPtr->width++;
+        }
+
+    }
+    return;
 }
 
 vector<point3d> cast_init_rays(const octomap::OcTree *octree, const point3d &position,
@@ -159,24 +172,38 @@ void octomap_callback(const octomap_msgs::Octomap::ConstPtr &octomap_msg) {
         cout << "msg got !" << endl;
 }
 
+void kinect_callback( const sensor_msgs::PointCloud2ConstPtr& cloud ) {
+
+}
+
 int main(int argc, char **argv) {
     ros::init(argc, argv, "Info_Exploration_Octomap");
     ros::NodeHandle nh;
     // Initial sub topic
     ros::Subscriber octomap_sub;
+    ros::Subscriber kinect_sub;
     octomap_sub = nh.subscribe<octomap_msgs::Octomap>("/octomap_binary", 10, octomap_callback);
+    kinect_sub = nh.subscribe<sensor_msgs::PointCloud2>("/camera/rgb/points", 1, kinect_callback);
+    
     ros::Publisher Map_pcl_pub;
+    ros::Publisher Free_pcl_pub;
     ros::Publisher VScan_pcl_pub;
     Map_pcl_pub = nh.advertise<PointCloud>("Current_Map", 1);
     VScan_pcl_pub = nh.advertise<PointCloud>("virtual_Scans", 1);
+    Free_pcl_pub = nh.advertise<PointCloud>("Free_points", 1);
 
     // PointCloud::Ptr map_pcl;
     PointCloud::Ptr map_pcl (new PointCloud);
+    PointCloud::Ptr free_pcl (new PointCloud);
     PointCloud::Ptr vsn_pcl (new PointCloud);
 
     map_pcl->header.frame_id = "/map";
     map_pcl->height = 1;
     map_pcl->width = 0;
+
+    free_pcl->header.frame_id = "/map";
+    free_pcl->height = 1;
+    free_pcl->width = 0;
 
     vsn_pcl->header.frame_id = "/map";
     vsn_pcl->height = 1;
@@ -198,6 +225,9 @@ int main(int argc, char **argv) {
     position = point3d(0, 0, 5);
     orientation = point3d(1, 0, 0);
     octomap::OcTreeNode *n;
+    octomap::OcTree tree1(0.2);
+    octomap::OcTree* cur_tree;
+    cur_tree = &tree1;
 
     // Initial Scan
     cout << "calculate free volume" << endl;
@@ -218,10 +248,13 @@ int main(int argc, char **argv) {
     for (auto h : Init_hits) {
         map_pcl->points.push_back(pcl::PointXYZ(h.x()/5.0, h.y()/5.0, h.z()/5.0));
         map_pcl->width++;
+        cur_tree->insertRay(orign, h, InitialScan.max_range);
     }
     map_pcl->header.stamp = ros::Time::now().toNSec() / 1e3;
     cout << "pcl size : " << Init_hits.size() << endl;
     Map_pcl_pub.publish(map_pcl);
+
+    get_free_points(cur_tree, free_pcl);
     // CurrentPcl_pub.publish();
     // map_pcl->points.push_back (PointType(1.0, 2.0, 3.0));
 
@@ -230,6 +263,8 @@ int main(int argc, char **argv) {
         // update the current map
         map_pcl->header.stamp = ros::Time::now().toNSec() / 1e3;
         Map_pcl_pub.publish(map_pcl);
+        free_pcl->header.stamp = ros::Time::now().toNSec() / 1e3;
+        Free_pcl_pub.publish(free_pcl);
 
 
         if( 0 )
