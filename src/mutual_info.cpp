@@ -4,6 +4,8 @@
 #include <algorithm>
 #include <iterator>
 
+#include <pcl/point_types.h>
+
 #include <octomap/octomap.h>
 #include <ros/ros.h>
 #include <pcl_ros/point_cloud.h>
@@ -20,6 +22,9 @@ using namespace std;
 using namespace std::chrono;
 
 typedef octomap::point3d point3d;
+typedef pcl::PointXYZ PointType;
+// typedef pcl::PointCloud<PointType> PointCloud;
+typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 const double PI = 3.1415926;
 const double free_prob = 0.3;
 octomap::OcTree *tree;
@@ -52,7 +57,6 @@ double get_free_volume(const octomap::OcTree *octree) {
     for(octomap::OcTree::leaf_iterator n = octree->begin_leafs(octree->getTreeDepth()); n != octree->end_leafs(); ++n) {
         if(!octree->isNodeOccupied(*n))
             volume += pow(n.getSize(), 3);
-            // cout << "node : " << n.getCoordinate() << endl;
     }
     return volume;
 }
@@ -161,9 +165,31 @@ int main(int argc, char **argv) {
     // Initial sub topic
     ros::Subscriber octomap_sub;
     octomap_sub = nh.subscribe<octomap_msgs::Octomap>("/octomap_binary", 10, octomap_callback);
+    ros::Publisher Map_pcl_pub;
+    ros::Publisher VScan_pcl_pub;
+    Map_pcl_pub = nh.advertise<PointCloud>("Current_Map", 1);
+    VScan_pcl_pub = nh.advertise<PointCloud>("virtual_Scans", 1);
+
+    // PointCloud::Ptr map_pcl;
+    PointCloud::Ptr map_pcl (new PointCloud);
+    PointCloud::Ptr vsn_pcl (new PointCloud);
+
+    map_pcl->header.frame_id = "/map";
+    map_pcl->height = 1;
+    map_pcl->width = 0;
+
+    vsn_pcl->header.frame_id = "/map";
+    vsn_pcl->height = 1;
+    vsn_pcl->width = 0;
+    
 
     ros::Rate r(1); // 10 hz
 
+    // wait until the prior map comes in
+    while(!octomap_flag) 
+    {
+        ros::spinOnce();
+    }
 
     // Initialize parameters
     int max_idx = 0;
@@ -186,10 +212,27 @@ int main(int argc, char **argv) {
     cout << "finished casting initial rays" << endl;
     double before = get_free_volume(tree);
 
+    cout << "Free Initial : " << before << endl;
+
+    // publish the point cloud : current map
+    for (auto h : Init_hits) {
+        map_pcl->points.push_back(pcl::PointXYZ(h.x()/5.0, h.y()/5.0, h.z()/5.0));
+        map_pcl->width++;
+    }
+    map_pcl->header.stamp = ros::Time::now().toNSec() / 1e3;
+    cout << "pcl size : " << Init_hits.size() << endl;
+    Map_pcl_pub.publish(map_pcl);
+    // CurrentPcl_pub.publish();
+    // map_pcl->points.push_back (PointType(1.0, 2.0, 3.0));
 
     while (ros::ok())
     {
-        if( octomap_flag )
+        // update the current map
+        map_pcl->header.stamp = ros::Time::now().toNSec() / 1e3;
+        Map_pcl_pub.publish(map_pcl);
+
+
+        if( 0 )
         {
             // Generate Candidates
             vector<pair<point3d, point3d>> candidates = generate_candidates(position);
