@@ -6,6 +6,7 @@
 
 #include <pcl/point_types.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <pcl_conversions/pcl_conversions.h>
 
 #include <octomap/octomap.h>
 #include <ros/ros.h>
@@ -28,6 +29,7 @@ typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 const double PI = 3.1415926;
 const double free_prob = 0.3;
 octomap::OcTree *tree;
+octomap::OcTree *tree_kinect;
 bool octomap_flag = 0; // 0 : msg not received
 
 
@@ -172,8 +174,34 @@ void octomap_callback(const octomap_msgs::Octomap::ConstPtr &octomap_msg) {
         cout << "msg got !" << endl;
 }
 
-void kinect_callback( const sensor_msgs::PointCloud2ConstPtr& cloud ) {
+void kinect_callback( const sensor_msgs::PointCloud2ConstPtr& cloud2_msg ) {
+    cout << "kinect callback" << endl;
+    // Convert to PCL data type
+    pcl::PCLPointCloud2 pcl_pc2;
+    pcl_conversions::toPCL(*cloud2_msg, pcl_pc2);
+    PointCloud::Ptr cloud (new PointCloud);
+    pcl::fromPCLPointCloud2(pcl_pc2,*cloud);
+    auto octree_copy = new octomap::OcTree(0.2);
+    point3d origin(0, 0, 5);
+    
+    cout << "height : " << cloud->height << "  , width :" << cloud->width << endl;
 
+    // for (int i = 1; i < cloud->height; i++)
+        for (int j = 1; j< cloud->width; j++)
+        {
+            // cout << cloud->at(j) << endl;
+            octree_copy->insertRay(origin, 
+                point3d(cloud->at(j).x*5, cloud->at(j).y*5, cloud->at(j).z*5), kinect.max_range);
+        }
+
+    
+    // PointCloud::Ptr cloud (new PointCloud);
+    // // Convert to PCL data type
+    // pcl_conversions::toPCL(cloud_msg, cloud);
+    
+    // octree_copy->insertPointCloud(cloud->points, origin);
+    cout << "fake kinect point cloud, resulting a entropy : " << get_free_volume(octree_copy) << endl;
+    delete octree_copy;
 }
 
 int main(int argc, char **argv) {
@@ -183,7 +211,7 @@ int main(int argc, char **argv) {
     ros::Subscriber octomap_sub;
     ros::Subscriber kinect_sub;
     octomap_sub = nh.subscribe<octomap_msgs::Octomap>("/octomap_binary", 10, octomap_callback);
-    kinect_sub = nh.subscribe<sensor_msgs::PointCloud2>("/camera/rgb/points", 1, kinect_callback);
+    kinect_sub = nh.subscribe<sensor_msgs::PointCloud2>("/Current_Map", 1, kinect_callback);
     
     ros::Publisher Map_pcl_pub;
     ros::Publisher Free_pcl_pub;
@@ -228,11 +256,12 @@ int main(int argc, char **argv) {
     octomap::OcTree tree1(0.2);
     octomap::OcTree* cur_tree;
     cur_tree = &tree1;
+    // tree_kinect = 
 
     // Initial Scan
     cout << "calculate free volume" << endl;
     double mapEntropy = get_free_volume(tree);
-    cout << "Map Entropy : " << mapEntropy << endl;
+    cout << "Original Map Entropy : " << mapEntropy << endl;
     point3d eu2dr(1, 0, 0);
     point3d orign(0, 0, 5);
     point3d orient(0, 0, 1);
@@ -250,6 +279,9 @@ int main(int argc, char **argv) {
         map_pcl->width++;
         cur_tree->insertRay(orign, h, InitialScan.max_range);
     }
+
+    cout << "CurMap  Entropy : " << get_free_volume(cur_tree) << endl;
+
     map_pcl->header.stamp = ros::Time::now().toNSec() / 1e3;
     cout << "pcl size : " << Init_hits.size() << endl;
     Map_pcl_pub.publish(map_pcl);
