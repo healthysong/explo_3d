@@ -31,6 +31,10 @@ const double free_prob = 0.3;
 octomap::OcTree *tree;
 octomap::OcTree *tree_kinect;
 bool octomap_flag = 0; // 0 : msg not received
+   
+point3d position;
+point3d orientation;
+
 
 
 struct Kinect {
@@ -182,7 +186,7 @@ void kinect_callback( const sensor_msgs::PointCloud2ConstPtr& cloud2_msg ) {
     PointCloud::Ptr cloud (new PointCloud);
     pcl::fromPCLPointCloud2(pcl_pc2,*cloud);
     auto octree_copy = new octomap::OcTree(0.2);
-    point3d origin(0, 0, 5);
+    // point3d origin(0, 0, 5);
     
     cout << "height : " << cloud->height << "  , width :" << cloud->width << endl;
 
@@ -190,16 +194,11 @@ void kinect_callback( const sensor_msgs::PointCloud2ConstPtr& cloud2_msg ) {
         for (int j = 1; j< cloud->width; j++)
         {
             // cout << cloud->at(j) << endl;
-            octree_copy->insertRay(origin, 
+            octree_copy->insertRay(position, 
                 point3d(cloud->at(j).x*5, cloud->at(j).y*5, cloud->at(j).z*5), kinect.max_range);
         }
 
     
-    // PointCloud::Ptr cloud (new PointCloud);
-    // // Convert to PCL data type
-    // pcl_conversions::toPCL(cloud_msg, cloud);
-    
-    // octree_copy->insertPointCloud(cloud->points, origin);
     cout << "fake kinect point cloud, resulting a entropy : " << get_free_volume(octree_copy) << endl;
     delete octree_copy;
 }
@@ -211,7 +210,7 @@ int main(int argc, char **argv) {
     ros::Subscriber octomap_sub;
     ros::Subscriber kinect_sub;
     octomap_sub = nh.subscribe<octomap_msgs::Octomap>("/octomap_binary", 10, octomap_callback);
-    kinect_sub = nh.subscribe<sensor_msgs::PointCloud2>("/Current_Map", 1, kinect_callback);
+    kinect_sub = nh.subscribe<sensor_msgs::PointCloud2>("/virtual_Scans", 1, kinect_callback);
     
     ros::Publisher Map_pcl_pub;
     ros::Publisher Free_pcl_pub;
@@ -248,8 +247,7 @@ int main(int argc, char **argv) {
 
     // Initialize parameters
     int max_idx = 0;
-    point3d position;
-    point3d orientation;
+
     position = point3d(0, 0, 5);
     orientation = point3d(1, 0, 0);
     octomap::OcTreeNode *n;
@@ -299,7 +297,7 @@ int main(int argc, char **argv) {
         Free_pcl_pub.publish(free_pcl);
 
 
-        if( 0 )
+        if( 1 )
         {
             // Generate Candidates
             vector<pair<point3d, point3d>> candidates = generate_candidates(position);
@@ -319,13 +317,13 @@ int main(int argc, char **argv) {
                 point3d eu2dr(1, 0, 0);
                 eu2dr.rotate_IP(c.second.roll(), c.second.pitch(), c.second.yaw() );
 
-                vector<point3d> hits = cast_kinect_rays(tree, c.first, eu2dr);
+                vector<point3d> hits = cast_kinect_rays(cur_tree, c.first, eu2dr);
                 high_resolution_clock::time_point t2 = high_resolution_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
                 cout << "Time on ray cast: " << duration << endl;
 
                 t1 = high_resolution_clock::now();
-                MIs[i] = calc_MI(tree, c.first, hits, before);
+                MIs[i] = calc_MI(cur_tree, c.first, hits, before);
                 t2 = high_resolution_clock::now();
                 duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
                 cout << "Candidate : " << c.first << "  **  MI: " << MIs[i] << endl;
@@ -338,10 +336,34 @@ int main(int argc, char **argv) {
                 if (MIs[i] > MIs[max_idx])
                 {
                     max_idx = i;
+                    // publish the virtual scan once
+                    vsn_pcl->clear();
+                    for (auto h : hits) {
+                        vsn_pcl->points.push_back(pcl::PointXYZ(h.x()/5.0, h.y()/5.0, h.z()/5.0));
+                        vsn_pcl->width++;
+                        // cur_tree->insertRay(c.first, h, kinect.max_range);
+                    }
+                    VScan_pcl_pub.publish(vsn_pcl);
                 }
+
             }
 
             // Send the Robot 
+            position = candidates[max_idx].first;
+            cout << "move the robot to : " << position << endl;
+
+            // Simulate the ray cast at best candidate
+            cout << "Update the octomap..." << endl;
+            eu2dr.rotate_IP(0, 0, candidates[max_idx].second.yaw());
+            // hits.clear();
+            vector<point3d> hits = cast_kinect_rays(tree, position, eu2dr);
+            for (auto h : hits) {
+                cur_tree->insertRay(position, h, kinect.max_range);
+            }
+            cout << "CurMap  Entropy : " << get_free_volume(cur_tree) << endl;
+            // cout << "finished casting initial rays" << endl;
+
+
 
 
             // Disable flag and wait for next message.
